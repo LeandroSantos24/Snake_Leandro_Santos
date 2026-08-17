@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+game_*.log
+.env
+token.txt
