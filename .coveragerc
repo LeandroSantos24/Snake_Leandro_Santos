@@ -1,0 +1,10 @@
+[run]
+source = snake_bot
+relative_files = true
+omit =
+    tests/*
+    */__init__.py
+
+[report]
+show_missing = true
+skip_empty = true
