@@ -2,8 +2,8 @@
 __pycache__/
 *.pyc
 game_*.log
+.coverage
+.coverage.*
+htmlcov/
 .env
 token.txt
-.coverage
-htmlcov/
-.coverage.*

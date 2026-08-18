@@ -1,110 +1,120 @@
-# Bot de Snake — The Code Challenge
+# Bot de Snake — CodeChallenge
 
-Bot autónomo que se conecta por websocket al servidor del Code Challenge y juega
-al Snake por turnos.
+[![CI](https://github.com/LeandroSantos24/Snake_Leandro_Santos/actions/workflows/ci.yml/badge.svg)](https://github.com/LeandroSantos24/Snake_Leandro_Santos/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/LeandroSantos24/Snake_Leandro_Santos/python-coverage-comment-action-data/endpoint.json)](https://github.com/LeandroSantos24/Snake_Leandro_Santos/actions/workflows/ci.yml)
+[![Complejidad](https://img.shields.io/badge/complejidad-A-brightgreen)](https://github.com/rubik/xenon)
+[![Lint](https://img.shields.io/badge/flake8-passing-brightgreen)](https://flake8.pycqa.org/)
 
-## Archivos
+Bot autónomo que juega al Snake por turnos contra otros bots en la plataforma
+[CodeChallenge](https://codechallenge.net.ar). Se conecta por websocket, recibe
+el tablero en cada turno y responde con una dirección.
 
-| Archivo | Para qué sirve |
-|---|---|
-| `bot.py` | Cliente websocket: conecta, acepta desafíos, juega y loguea. **No hace falta tocarlo.** |
-| `strategy.py` | **Acá vive tu estrategia.** Parseo del tablero + decisión de la jugada. |
-| `simulador.py` | Motor de Snake local para probar la estrategia sin servidor ni rivales. |
-| `tunear.py` | Busca automáticamente los mejores pesos de la estrategia. |
+Autor: Leandro Gastón Santos — Computación II, 2026.
 
 ## Instalación
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Correr el bot
+## Ejecución
 
 ```bash
-python bot.py <TU_TOKEN>              # queda esperando desafíos
-python bot.py <TU_TOKEN> --debug      # además muestra por qué eligió cada jugada
-python bot.py <TU_TOKEN> --challenge rival@mail.com   # desafía apenas se conecte
+export BOT_TOKEN="tu-token"     # se obtiene en My Bots
+python run.py
 ```
 
-Mejor todavía, para no dejar el token escrito en ningún lado:
+También acepta el token como argumento y puede desafiar a alguien al conectarse:
 
 ```bash
-export BOT_TOKEN="..."   # en Windows: set BOT_TOKEN=...
-python bot.py
+python run.py <TOKEN>
+python run.py <TOKEN> --challenge rival@mail.com
 ```
 
-Cada partida deja un `game_<id>.log` con todos los eventos y acciones.
+Usar `BOT_TOKEN` es preferible: así el token no queda en el historial de la
+terminal ni se puede subir al repositorio por error.
 
-## Probar sin servidor
+Cada partida deja un archivo `game_<id>.log` con todos los eventos recibidos
+(`<`) y las acciones enviadas (`>`).
+
+## Verificación de calidad
 
 ```bash
-python simulador.py --partidas 100          # estadísticas contra un bot glotón
-python simulador.py --ver                   # ver una partida animada
-python simulador.py --rival yo              # tu bot contra sí mismo
-python tunear.py                            # buscar mejores pesos
+flake8 .                                                    # linter
+coverage run -m unittest discover                           # tests
+coverage report --fail-under=90                             # cobertura
+xenon --max-absolute A --max-modules A --max-average A snake_bot/
 ```
 
-Resultados actuales (v2):
+Los cuatro comandos se ejecutan automáticamente en GitHub Actions ante cada
+push a `main` y cada pull request.
 
-| Rival | Partidas | Ganadas | Choques propios |
-|---|---|---|---|
-| Glotón | 250 | 84% | 0.4% |
-| Random | 100 | 100% | 0% |
-| Versión v1 | 150 | 56% | 4% |
+## Estructura
 
-En 21 partidas reales contra otro competidor la v1 había chocado 2 veces (-500
-cada una). El replay de esos logs confirma que la v2 elige distinto justo en el
-turno en que la v1 entraba en la trampa.
+```
+snake_bot/
+├── board.py       Tablero: parseo del texto del servidor y consultas por celda
+├── snake.py       Serpiente: cuerpo, cola y cuándo se libera cada celda
+├── game_state.py  Estado del turno: tablero + ambas serpientes + comida
+├── analysis.py    FloodFill temporal, PathFinder (BFS) y Territory (Voronoi)
+├── moves.py       Move: un movimiento candidato y su nivel de seguridad
+├── evaluator.py   MoveEvaluator: calcula las métricas de cada dirección
+├── strategy.py    Strategy: puntúa los movimientos y elige
+├── client.py      SnakeClient: protocolo websocket
+├── logger.py      MatchLogger: registro de partidas
+└── cli.py         Argumentos de la línea de comandos
+tests/             Un archivo de tests por módulo
+run.py             Punto de entrada
+```
+
+La separación sigue una regla simple: `analysis` **mide** el tablero,
+`evaluator` **calcula** las métricas de cada opción y `strategy` **decide**.
+Cada capa se prueba por separado, y la conexión se inyecta desde afuera, así
+que el cliente se testea completo sin levantar un servidor.
 
 ## Cómo decide la jugada
 
-El orden de prioridades sale de las reglas del juego: chocar cuesta **-500 y le
-regala +1000 al rival** (1500 de diferencia), mientras que una manzana da **+100**.
-O sea: sobrevivir vale muchísimo más que comer.
+El orden de prioridades sale de la tabla de puntos del juego: chocar cuesta
+**-500** y le da **+1000** al rival (1500 de diferencia), mientras que una
+manzana da **+100**. Sobrevivir vale quince manzanas, así que ninguna cantidad
+de comida justifica un movimiento riesgoso.
 
-Para cada una de las 4 direcciones posibles:
+Para cada una de las cuatro direcciones:
 
-1. **¿Es legal?** No es pared ni cuerpo (mío o del rival). Si no, se descarta.
-2. **¿Cuánto espacio me queda, contando el tiempo?** *Flood fill temporal*: no
-   alcanza con que una celda esté conectada, hay que llegar a tiempo. Las celdas
-   de un cuerpo se liberan recién cuando pasa la cola, así que se modela **cuándo**
-   queda libre cada una.
-3. **¿Cuánto territorio controlo?** Diagrama de Voronoi: solo cuentan las celdas a
-   las que llego **antes** que el rival. Es lo que evita meterse en pasillos que el
-   rival cierra unos turnos después.
-4. **¿Llego a mi propia cola?** Si puedo alcanzarla, siempre me queda el recurso de
-   perseguirla y nunca me encierro.
-5. **¿Y si el rival avanza?** Flood fill *pesimista* que bloquea las celdas vecinas
-   a la cabeza rival.
-6. **¿Qué tan cerca queda la comida?** BFS a la manzana más cercana alcanzable.
-   Si no hay ninguna, modo supervivencia: persigo mi cola.
+1. **¿Es legal?** No es pared ni cuerpo. Si no, se descarta.
+2. **¿Cuánto espacio queda, contando el tiempo?** Un *flood fill* común cuenta
+   celdas conectadas, y ese número engaña: no sirve un hueco de 200 celdas si
+   para entrar hay que atravesar un cuerpo que recién se mueve dentro de quince
+   turnos. `FloodFill` avanza turno a turno y solo pisa una celda si ya se
+   liberó cuando llega.
+3. **¿Cuánto territorio se controla?** `Territory` arma un diagrama de Voronoi:
+   solo cuentan las celdas que se alcanzan **antes** que el rival. Es lo que
+   detecta a tiempo los pasillos que el rival está por cerrar.
+4. **¿Se puede volver a la propia cola?** Si se puede, siempre queda el recurso
+   de perseguirla y nunca hay encierro.
+5. **¿Y si el rival avanza?** Un segundo flood fill pesimista bloquea las celdas
+   vecinas a la cabeza contraria.
+6. **¿Qué tan cerca está la comida?** BFS a la manzana más cercana alcanzable.
+   Si no hay ninguna, modo supervivencia: perseguir la cola.
 
-Las opciones se agrupan en **niveles de seguridad** (2 = cómodo, 1 = justo,
-0 = peligroso) y dentro de cada nivel se ordenan por puntaje. Nunca elige un nivel
-más bajo si hay uno más alto disponible.
+Con esas métricas cada movimiento recibe un **nivel de seguridad** (cómodo,
+justo o peligroso) y un puntaje. El orden es primero por nivel y solo después
+por puntaje, de modo que un movimiento peligroso nunca le gana a uno seguro.
 
-## Pesos que podés tunear
+## Resultados
 
-En `strategy.py`:
+| Escenario | Partidas | Ganadas | Choques propios |
+|---|---|---|---|
+| Torneo y desafíos reales | 28 | 22 | 2 |
+| Simulador vs. rival glotón | 250 | 84% | 0.4% |
+| Simulador vs. rival aleatorio | 100 | 100% | 0% |
 
-```python
-PESO_ESPACIO = 1.0       # espacio alcanzable a tiempo
-PESO_TERRITORIO = 1.5    # celdas que gano yo antes que el rival
-PESO_LIBERTAD = 10.0     # salidas de la celda destino
-PESO_COMIDA = 20.0       # acercarse a la comida
-PESO_RIESGO = 30.0       # castigo por quedar pegado a la cabeza rival
-MARGEN_SEGURIDAD = 2     # celdas libres extra que exijo además de mi largo
-```
+Los dos choques reales corresponden a la primera versión de la estrategia, que
+no modelaba el tiempo en el flood fill. Al reproducir esas partidas contra la
+versión actual, la decisión cambia justo en el turno en que la versión anterior
+entraba en la trampa. Desde esa corrección no volvió a chocar en partidas reales.
 
-## Si algo sale raro en la primera partida
-
-- **Se mueve al revés en vertical**: poné `INVERTIR_VERTICAL = True` en `strategy.py`.
-  (Ya verificado contra el servidor real: `up` sube, no hace falta invertir.)
-- **El servidor rechaza la jugada**: revisá el `game_<id>.log`, ahí queda el JSON
-  exacto que mandaste.
-
-## Seguridad
-
-Nunca subas el token al repo. Está en `.gitignore` por si acaso, pero lo más prolijo
-es pasarlo siempre por variable de entorno.
+Cada decisión tarda unos pocos milisegundos, muy por debajo del límite de
+tiempo por movimiento que impone el servidor.
