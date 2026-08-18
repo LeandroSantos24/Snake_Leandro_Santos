@@ -27,7 +27,7 @@ except ImportError:
 
 from strategy import choose_direction, evaluar_movimientos
 
-SERVER = "wss://codechallenge-server.up.railway.app:443/ws"
+SERVER = "wss://server.codechallenge.net.ar/ws"
 JUEGO = "snake"
 
 
